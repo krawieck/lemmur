@@ -1,7 +1,6 @@
 import 'package:esys_flutter_share/esys_flutter_share.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:lemmy_api_client/v2.dart';
 
@@ -12,6 +11,7 @@ import '../util/extensions/api.dart';
 import '../util/more_icon.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/post.dart';
+import '../widgets/pull_to_refresh.dart';
 import '../widgets/reveal_after_scroll.dart';
 import '../widgets/save_post_button.dart';
 import '../widgets/write_comment.dart';
@@ -72,8 +72,6 @@ class FullPostPage extends HookWidget {
     // FUNCTIONS
 
     refresh() async {
-      await HapticFeedback.mediumImpact();
-
       try {
         await fullPostRefreshable.refresh();
         // ignore: avoid_catches_without_on_clauses
@@ -118,7 +116,7 @@ class FullPostPage extends HookWidget {
         floatingActionButton: FloatingActionButton(
             onPressed: loggedInAction((_) => comment()),
             child: const Icon(Icons.comment)),
-        body: RefreshIndicator(
+        body: PullToRefresh(
           onRefresh: refresh,
           child: ListView(
             controller: scrollController,

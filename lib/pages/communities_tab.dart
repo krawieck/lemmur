@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:fuzzy/fuzzy.dart';
 import 'package:lemmy_api_client/v2.dart';
@@ -14,6 +13,7 @@ import '../util/extensions/iterators.dart';
 import '../util/goto.dart';
 import '../util/text_color.dart';
 import '../widgets/avatar.dart';
+import '../widgets/pull_to_refresh.dart';
 
 /// List of subscribed communities per instance
 class CommunitiesTab extends HookWidget {
@@ -102,7 +102,6 @@ class CommunitiesTab extends HookWidget {
     }
 
     refresh() async {
-      await HapticFeedback.mediumImpact();
       try {
         await Future.wait([
           instancesRefreshable.refresh(),
@@ -164,7 +163,7 @@ class CommunitiesTab extends HookWidget {
           ),
         ),
       ),
-      body: RefreshIndicator(
+      body: PullToRefresh(
         onRefresh: refresh,
         child: amountOfDisplayInstances == 0
             ? const Center(
