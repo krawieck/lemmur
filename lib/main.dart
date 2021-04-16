@@ -24,14 +24,14 @@ Future<void> main() async {
 
   final configStore = await ConfigStore.load();
   final accountsStore = await AccountsStore.load();
-  final userSettingsStore = await LemmySettingsStore.load(accountsStore);
+  final lemmySettingsStore = await LemmySettingsStore.load(accountsStore);
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: configStore),
         ChangeNotifierProvider.value(value: accountsStore),
-        ChangeNotifierProvider.value(value: userSettingsStore),
+        ChangeNotifierProvider.value(value: lemmySettingsStore),
       ],
       child: const MyApp(),
     ),

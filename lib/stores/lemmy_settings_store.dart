@@ -14,7 +14,7 @@ part 'lemmy_settings_store.g.dart';
 /// Store caching user settings set with `SaveUserSettings` in the lemmy API
 @JsonSerializable()
 class LemmySettingsStore extends ChangeNotifier {
-  static const prefsKey = 'v5:UserSettingsStore';
+  static const prefsKey = 'v1:LemmySettingsStore';
   static final _prefs = SharedPreferences.getInstance();
   static final defaultUserSettings = LocalUserSettings(
     id: -1,
