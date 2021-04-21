@@ -7,7 +7,7 @@ import 'package:lemmy_api_client/v3.dart';
 import '../hooks/memo_future.dart';
 import '../hooks/stores.dart';
 import '../l10n/l10n.dart';
-import '../pages/manage_account.dart';
+import '../pages/manage_account/manage_account.dart';
 import '../util/extensions/api.dart';
 import '../util/extensions/datetime.dart';
 import '../util/goto.dart';

@@ -12,7 +12,7 @@ import '../widgets/bottom_modal.dart';
 import '../widgets/radio_picker.dart';
 import 'add_account.dart';
 import 'add_instance.dart';
-import 'manage_account.dart';
+import 'manage_account/manage_account.dart';
 
 /// Page with a list of different settings sections
 class SettingsPage extends StatelessWidget {

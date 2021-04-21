@@ -1,18 +1,19 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lemmy_api_client/pictrs.dart';
 import 'package:lemmy_api_client/v3.dart';
 
-import '../hooks/delayed_loading.dart';
-import '../hooks/image_picker.dart';
-import '../hooks/ref.dart';
-import '../hooks/stores.dart';
-import '../l10n/l10n.dart';
-import '../util/pictrs.dart';
-import '../widgets/bottom_safe.dart';
-import '../widgets/radio_picker.dart';
+import '../../hooks/delayed_loading.dart';
+import '../../hooks/image_picker.dart';
+import '../../hooks/stores.dart';
+import '../../l10n/l10n.dart';
+import '../../util/pictrs.dart';
+import '../../widgets/bottom_safe.dart';
+import '../../widgets/radio_picker.dart';
+import 'manage_account_store.dart';
 
 /// Page for managing things like username, email, avatar etc
 /// This page will assume the manage account is logged in and
@@ -25,71 +26,44 @@ class ManageAccountPage extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accountStore = useAccountsStore();
-
-    final userFuture = useMemoized(() async {
-      final site = await LemmyApiV3(instanceHost).run(GetSite(
-          auth: accountStore.userDataFor(instanceHost, username)!.jwt.raw));
-
-      return site.myUser!;
-    });
+    final accountsStore = useAccountsStore();
+    final store = useMemoized(
+      () => ManageAccountStore(
+        accountsStore: accountsStore,
+        instanceHost: instanceHost,
+        username: username,
+      )..fetch(),
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: Text('$username@$instanceHost'),
       ),
-      body: FutureBuilder<LocalUserSettingsView>(
-        future: userFuture,
-        builder: (_, userSnap) {
-          if (userSnap.hasError) {
-            return Center(child: Text('Error: ${userSnap.error?.toString()}'));
-          }
-          if (!userSnap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          return _ManageAccount(user: userSnap.data!);
-        },
+      body: Observer(
+        builder: (context) => store.localUserSettingsView.map(
+          data: (data) => _ManageAccount(user: data, store: store),
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, st) =>
+              Center(child: Text('Error: ${error.toString()}')),
+        ),
       ),
     );
   }
 }
 
 class _ManageAccount extends HookWidget {
-  const _ManageAccount({Key? key, required this.user}) : super(key: key);
+  const _ManageAccount({
+    Key? key,
+    required this.user,
+    required this.store,
+  }) : super(key: key);
 
   final LocalUserSettingsView user;
+  final ManageAccountStore store;
 
   @override
   Widget build(BuildContext context) {
-    final accountsStore = useAccountsStore();
     final theme = Theme.of(context);
-    final saveDelayedLoading = useDelayedLoading();
-    final deleteDelayedLoading = useDelayedLoading();
-
-    final displayNameController =
-        useTextEditingController(text: user.person.preferredUsername);
-    final bioController = useTextEditingController(text: user.person.bio);
-    final emailController =
-        useTextEditingController(text: user.localUser.email);
-    final matrixUserController =
-        useTextEditingController(text: user.person.matrixUserId);
-    final avatar = useRef(user.person.avatar);
-    final banner = useRef(user.person.banner);
-    final showAvatars = useState(user.localUser.showAvatars);
-    final showNsfw = useState(user.localUser.showNsfw);
-    final sendNotificationsToEmail =
-        useState(user.localUser.sendNotificationsToEmail);
-    final defaultListingType = useState(user.localUser.defaultListingType);
-    final defaultSortType = useState(user.localUser.defaultSortType);
-    final newPasswordController = useTextEditingController();
-    final newPasswordVerifyController = useTextEditingController();
-    final oldPasswordController = useTextEditingController();
-
-    final informAcceptedAvatarRef = useRef<VoidCallback?>(null);
-    final informAcceptedBannerRef = useRef<VoidCallback?>(null);
-
-    final deleteAccountPasswordController = useTextEditingController();
 
     final bioFocusNode = useFocusNode();
     final emailFocusNode = useFocusNode();
@@ -98,45 +72,9 @@ class _ManageAccount extends HookWidget {
     final verifyPasswordFocusNode = useFocusNode();
     final oldPasswordFocusNode = useFocusNode();
 
-    final token =
-        accountsStore.userDataFor(user.instanceHost, user.person.name)!.jwt;
-
     handleSubmit() async {
-      saveDelayedLoading.start();
-
       try {
-        await LemmyApiV3(user.instanceHost).run(SaveUserSettings(
-          showNsfw: showNsfw.value,
-          theme: user.localUser.theme,
-          defaultSortType: defaultSortType.value,
-          defaultListingType: defaultListingType.value,
-          lang: user.localUser.lang,
-          showAvatars: showAvatars.value,
-          sendNotificationsToEmail: sendNotificationsToEmail.value,
-          auth: token.raw,
-          avatar: avatar.current,
-          banner: banner.current,
-          newPassword: newPasswordController.text.isEmpty
-              ? null
-              : newPasswordController.text,
-          newPasswordVerify: newPasswordVerifyController.text.isEmpty
-              ? null
-              : newPasswordVerifyController.text,
-          oldPassword: oldPasswordController.text.isEmpty
-              ? null
-              : oldPasswordController.text,
-          matrixUserId: matrixUserController.text.isEmpty
-              ? null
-              : matrixUserController.text,
-          preferredUsername: displayNameController.text.isEmpty
-              ? null
-              : displayNameController.text,
-          bio: bioController.text.isEmpty ? null : bioController.text,
-          email: emailController.text.isEmpty ? null : emailController.text,
-        ));
-
-        informAcceptedAvatarRef.current?.call();
-        informAcceptedBannerRef.current?.call();
+        await store.saveSettings();
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('User settings saved'),
@@ -145,8 +83,6 @@ class _ManageAccount extends HookWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(err.toString()),
         ));
-      } finally {
-        saveDelayedLoading.cancel();
       }
     }
 
@@ -162,7 +98,7 @@ class _ManageAccount extends HookWidget {
                   Text(L10n.of(context)!.delete_account_confirm),
                   const SizedBox(height: 10),
                   TextField(
-                    controller: deleteAccountPasswordController,
+                    controller: store.deleteAccountPasswordController,
                     autofillHints: const [AutofillHints.password],
                     keyboardType: TextInputType.visiblePassword,
                     obscureText: true,
@@ -186,57 +122,52 @@ class _ManageAccount extends HookWidget {
           false;
 
       if (confirmDelete) {
-        deleteDelayedLoading.start();
-
         try {
-          await LemmyApiV3(user.instanceHost).run(DeleteAccount(
-            password: deleteAccountPasswordController.text,
-            auth: token.raw,
-          ));
+          await store.deleteAccount();
 
-          await accountsStore.removeAccount(
-              user.instanceHost, user.person.name);
           Navigator.of(context).pop();
         } on Exception catch (err) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(err.toString()),
           ));
         }
-
-        deleteDelayedLoading.cancel();
       } else {
-        deleteAccountPasswordController.clear();
+        store.deleteAccountPasswordController.clear();
       }
     }
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 15),
       children: [
-        _ImagePicker(
-          user: user,
-          name: L10n.of(context)!.avatar,
-          initialUrl: avatar.current,
-          onChange: (value) => avatar.current = value,
-          informAcceptedRef: informAcceptedAvatarRef,
+        Observer(
+          builder: (context) => _ImagePicker(
+            user: user,
+            name: L10n.of(context)!.avatar,
+            initialUrl: store.initialAvatar,
+            newUrl: store.newAvatar,
+            onChange: (value) => store.newAvatar = value,
+          ),
         ),
         const SizedBox(height: 8),
-        _ImagePicker(
-          user: user,
-          name: L10n.of(context)!.banner,
-          initialUrl: banner.current,
-          onChange: (value) => banner.current = value,
-          informAcceptedRef: informAcceptedBannerRef,
+        Observer(
+          builder: (context) => _ImagePicker(
+            user: user,
+            name: L10n.of(context)!.banner,
+            initialUrl: store.initialBanner,
+            newUrl: store.newBanner,
+            onChange: (value) => store.newBanner = value,
+          ),
         ),
         const SizedBox(height: 8),
         Text(L10n.of(context)!.display_name, style: theme.textTheme.headline6),
         TextField(
-          controller: displayNameController,
+          controller: store.displayNameController,
           onSubmitted: (_) => bioFocusNode.requestFocus(),
         ),
         const SizedBox(height: 8),
         Text(L10n.of(context)!.bio, style: theme.textTheme.headline6),
         TextField(
-          controller: bioController,
+          controller: store.bioController,
           focusNode: bioFocusNode,
           textCapitalization: TextCapitalization.sentences,
           onSubmitted: (_) => emailFocusNode.requestFocus(),
@@ -247,7 +178,7 @@ class _ManageAccount extends HookWidget {
         Text(L10n.of(context)!.email, style: theme.textTheme.headline6),
         TextField(
           focusNode: emailFocusNode,
-          controller: emailController,
+          controller: store.emailController,
           autofillHints: const [AutofillHints.email],
           keyboardType: TextInputType.emailAddress,
           onSubmitted: (_) => matrixUserFocusNode.requestFocus(),
@@ -256,14 +187,14 @@ class _ManageAccount extends HookWidget {
         Text(L10n.of(context)!.matrix_user, style: theme.textTheme.headline6),
         TextField(
           focusNode: matrixUserFocusNode,
-          controller: matrixUserController,
+          controller: store.matrixUserController,
           onSubmitted: (_) => newPasswordFocusNode.requestFocus(),
         ),
         const SizedBox(height: 8),
         Text(L10n.of(context)!.new_password, style: theme.textTheme.headline6),
         TextField(
           focusNode: newPasswordFocusNode,
-          controller: newPasswordController,
+          controller: store.newPasswordController,
           autofillHints: const [AutofillHints.newPassword],
           keyboardType: TextInputType.visiblePassword,
           obscureText: true,
@@ -274,7 +205,7 @@ class _ManageAccount extends HookWidget {
             style: theme.textTheme.headline6),
         TextField(
           focusNode: verifyPasswordFocusNode,
-          controller: newPasswordVerifyController,
+          controller: store.newPasswordVerifyController,
           autofillHints: const [AutofillHints.newPassword],
           keyboardType: TextInputType.visiblePassword,
           obscureText: true,
@@ -284,7 +215,7 @@ class _ManageAccount extends HookWidget {
         Text(L10n.of(context)!.old_password, style: theme.textTheme.headline6),
         TextField(
           focusNode: oldPasswordFocusNode,
-          controller: oldPasswordController,
+          controller: store.oldPasswordController,
           autofillHints: const [AutofillHints.password],
           keyboardType: TextInputType.visiblePassword,
           obscureText: true,
@@ -303,15 +234,17 @@ class _ManageAccount extends HookWidget {
                 )
               ],
             ),
-            RadioPicker<PostListingType>(
-              values: const [
-                PostListingType.all,
-                PostListingType.local,
-                PostListingType.subscribed,
-              ],
-              groupValue: defaultListingType.value,
-              onChanged: (value) => defaultListingType.value = value,
-              mapValueToString: (value) => value.value,
+            Observer(
+              builder: (context) => RadioPicker<PostListingType>(
+                values: const [
+                  PostListingType.all,
+                  PostListingType.local,
+                  PostListingType.subscribed,
+                ],
+                groupValue: store.defaultListingType,
+                onChanged: (val) => store.defaultListingType = val,
+                mapValueToString: (value) => value.value,
+              ),
             ),
           ],
         ),
@@ -329,61 +262,77 @@ class _ManageAccount extends HookWidget {
                 )
               ],
             ),
-            RadioPicker<SortType>(
-              values: SortType.values,
-              groupValue: defaultSortType.value,
-              onChanged: (value) => defaultSortType.value = value,
-              mapValueToString: (value) => value.value,
+            Observer(
+              builder: (context) => RadioPicker<SortType>(
+                values: SortType.values,
+                groupValue: store.defaultSortType,
+                onChanged: (val) => store.defaultSortType = val,
+                mapValueToString: (value) => value.value,
+              ),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        CheckboxListTile(
-          value: showAvatars.value,
-          onChanged: (checked) {
-            if (checked != null) showAvatars.value = checked;
-          },
-          title: Text(L10n.of(context)!.show_avatars),
-          subtitle: const Text('This has currently no effect on lemmur'),
-          dense: true,
-        ),
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          value: showNsfw.value,
-          onChanged: (checked) {
-            if (checked != null) showNsfw.value = checked;
-          },
-          title: Text(L10n.of(context)!.show_nsfw),
-          subtitle: const Text('This has currently no effect on lemmur'),
-          dense: true,
-        ),
-        const SizedBox(height: 8),
-        CheckboxListTile(
-          value: sendNotificationsToEmail.value,
-          onChanged: (checked) {
-            if (checked != null) sendNotificationsToEmail.value = checked;
-          },
-          title: Text(L10n.of(context)!.send_notifications_to_email),
-          dense: true,
-        ),
-        const SizedBox(height: 8),
-        ElevatedButton(
-          onPressed: saveDelayedLoading.loading ? null : handleSubmit,
-          child: saveDelayedLoading.loading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(),
-                )
-              : Text(L10n.of(context)!.save),
-        ),
-        const SizedBox(height: 8),
-        ElevatedButton(
-          onPressed: deleteAccountDialog,
-          style: ElevatedButton.styleFrom(
-            primary: Colors.red,
+        Observer(
+          builder: (context) => CheckboxListTile(
+            value: store.showAvatars,
+            onChanged: (val) {
+              if (val != null) store.showAvatars = val;
+            },
+            title: Text(L10n.of(context)!.show_avatars),
+            subtitle: const Text('This has currently no effect on lemmur'),
+            dense: true,
           ),
-          child: Text(L10n.of(context)!.delete_account.toUpperCase()),
+        ),
+        const SizedBox(height: 8),
+        Observer(
+          builder: (context) => CheckboxListTile(
+            value: store.showNsfw,
+            onChanged: (val) {
+              if (val != null) store.showNsfw = val;
+            },
+            title: Text(L10n.of(context)!.show_nsfw),
+            subtitle: const Text('This has currently no effect on lemmur'),
+            dense: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Observer(
+          builder: (context) => CheckboxListTile(
+            value: store.sendNotificationsToEmail,
+            onChanged: (val) {
+              if (val != null) store.sendNotificationsToEmail = val;
+            },
+            title: Text(L10n.of(context)!.send_notifications_to_email),
+            dense: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Observer(
+          builder: (context) => ElevatedButton(
+            onPressed: store.saving ? null : handleSubmit,
+            child: store.saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(),
+                  )
+                : Text(L10n.of(context)!.save),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Observer(
+          builder: (context) => ElevatedButton(
+            onPressed: store.deleting ? null : deleteAccountDialog,
+            style: ElevatedButton.styleFrom(primary: Colors.red),
+            child: store.deleting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(),
+                  )
+                : Text(L10n.of(context)!.delete_account.toUpperCase()),
+          ),
         ),
         const BottomSafe(),
       ],
@@ -395,30 +344,25 @@ class _ManageAccount extends HookWidget {
 class _ImagePicker extends HookWidget {
   final String name;
   final String? initialUrl;
+  final String? newUrl;
   final LocalUserSettingsView user;
   final ValueChanged<String?>? onChange;
-
-  /// _ImagePicker will set the ref to a callback that can inform _ImagePicker
-  /// that the current picture is accepted
-  /// and should no longer allow for deletion of it
-  final Ref<VoidCallback?> informAcceptedRef;
 
   const _ImagePicker({
     Key? key,
     required this.initialUrl,
+    required this.newUrl,
     required this.name,
     required this.user,
     required this.onChange,
-    required this.informAcceptedRef,
   }) : super(key: key);
+
+  bool get isInitial => newUrl == null;
+  String? get url => newUrl ?? initialUrl;
 
   @override
   Widget build(BuildContext context) {
-    // this is in case the passed initialUrl is changed,
-    // basically saves the very first initialUrl
-    final initialUrl = useRef(this.initialUrl);
     final theme = Theme.of(context);
-    final url = useState(initialUrl.current);
     final pictrsDeleteToken = useState<PictrsUploadFile?>(null);
 
     final imagePicker = useImagePicker();
@@ -440,12 +384,11 @@ class _ImagePicker extends HookWidget {
                 .raw,
           );
           pictrsDeleteToken.value = upload.files[0];
-          url.value =
-              pathToPictrs(user.instanceHost, pictrsDeleteToken.value!.file);
 
-          onChange?.call(url.value);
+          onChange?.call(
+              pathToPictrs(user.instanceHost, pictrsDeleteToken.value!.file));
         }
-      } on Exception catch (_) {
+      } on Exception {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Failed to upload image')));
       }
@@ -454,34 +397,17 @@ class _ImagePicker extends HookWidget {
     }
 
     removePicture({
-      bool updateState = true,
       required PictrsUploadFile pictrsToken,
     }) {
       PictrsApi(user.instanceHost).delete(pictrsToken).catchError((_) {});
 
-      if (updateState) {
-        pictrsDeleteToken.value = null;
-        url.value = initialUrl.current;
-        onChange?.call(url.value);
-      }
+      pictrsDeleteToken.value = null;
+      onChange?.call(null);
     }
 
     useEffect(() {
-      informAcceptedRef.current = () {
-        pictrsDeleteToken.value = null;
-        initialUrl.current = url.value;
-      };
-
-      return () {
-        // remove picture from pictrs when exiting
-        if (pictrsDeleteToken.value != null) {
-          removePicture(
-            updateState: false,
-            pictrsToken: pictrsDeleteToken.value!,
-          );
-        }
-      };
-    }, []);
+      pictrsDeleteToken.value = null;
+    }, [initialUrl]);
 
     return Column(
       children: [
@@ -489,7 +415,7 @@ class _ImagePicker extends HookWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(name, style: theme.textTheme.headline6),
-            if (pictrsDeleteToken.value == null)
+            if (isInitial)
               ElevatedButton(
                 onPressed: delayedLoading.loading ? null : uploadImage,
                 child: delayedLoading.loading
@@ -509,9 +435,9 @@ class _ImagePicker extends HookWidget {
               )
           ],
         ),
-        if (url.value != null)
+        if (url != null)
           CachedNetworkImage(
-            imageUrl: url.value!,
+            imageUrl: url!,
             errorWidget: (_, __, ___) => const Icon(Icons.error),
           ),
       ],
